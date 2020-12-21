@@ -10,10 +10,20 @@ library(lubridate)
 library(shinyWidgets)
 library(readr)
 library(mapview)
-
+library(leaflet.extras)
+library(mapedit)
 
 tag<-read_rds("tag.rds")
-
+ map <- leaflet() %>%
+   addTiles()%>% setView(lng=-12,lat=53,zoom=6)%>%
+   addDrawToolbar(polylineOptions = FALSE,circleOptions = FALSE,
+                  markerOptions = FALSE,
+                  circleMarkerOptions = FALSE,
+                  editOptions = editToolbarOptions()
+   )%>%
+   addWMSTiles("https://gis.ices.dk/gis/services/ICES_reference_layers/ICES_Areas/MapServer/WMSServer?",
+               layers = "0",
+               options = WMSTileOptions(format = "image/png", transparent = TRUE, crs = "EPSG:4326"))
 ui <- fluidPage(
   list(tags$head(
     HTML('<link rel="icon", href="Rplot.png",
@@ -72,9 +82,59 @@ ui <- fluidPage(
             selected = max(tag$Year)
           ),
           br(),br(),br(),br(),
-          downloadButton(outputId = "dl", label = "Download Map"))))))
+          downloadButton(outputId = "dl", label = "Download Map")))),
+    tabPanel(
+      title = "MapEdit",
+      # Include the customised CSS
+      div(
+        class = "outer",
+        tags$style(
+          type = "text/css",
+          ".outer {position: fixed; top: 41px; left: 0; right: 0; bottom: 0; padding: 0}"
+        )),uiOutput("area"),uiOutput("action"))
+    ))
 
 server <- function(input, output, session) {
+  
+  output$action<-renderUI({
+   
+      actionBttn(
+        inputId = "save",
+        label = "Show selected coordinates",
+        color = "success"
+      )
+  })
+  
+  
+  edits <- callModule(
+    editMod,
+    leafmap = map,
+    id = "map"
+  )
+  observeEvent(input$save, {
+    #updateTabsetPanel(session, "inTabset",selected ="Area Selection Explorer")
+    x_geom <- edits()$finished$geometry[[1]][[1]][,1]
+    y_geom<-edits()$finished$geometry[[1]][[1]][,2]
+   # updateTextInput(session, "xcoord2", value = x_geom)
+   # updateTextInput(session, "ycoord2", value = y_geom)
+    if (!is.null(x_geom)) {
+      output$xcoord<-  renderText({x_geom})}
+    if (!is.null(y_geom)) {
+      output$ycoord<-  renderText({y_geom})} 
+    
+    output$note<- renderText({ "!!!After every selection click Recycling Bin to clear selected layer"})
+    
+  })
+  output$area<-renderUI(
+    list( editModUI("map"),
+          "x coordinates:",br(),
+          verbatimTextOutput("xcoord"),
+          "y coordinates:",br(),
+          verbatimTextOutput("ycoord"),
+          
+          verbatimTextOutput("note")
+    ))
+  
   
   events <- reactive({
     filter(tag, Year == input$year)
